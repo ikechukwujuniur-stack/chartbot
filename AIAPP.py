@@ -4,7 +4,7 @@ import re
 from gtts import gTTS
 import tempfile
 
-st.title("📚 Free AI Wiki Q&A Application")
+st.title("📚 Dictionary")
 
 # ---------------- SETTINGS ----------------
 
