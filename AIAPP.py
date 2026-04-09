@@ -39,58 +39,9 @@ for k, v in defaults.items():
 # -------------------------
 # HELPERS (UNCHANGED)
 # -------------------------
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
 
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        with open(USERS_FILE, "w") as f:
-            json.dump({}, f)
-        return {}
-    with open(USERS_FILE, "r") as f:
-        return json.load(f)
+    
 
-def save_users(users):
-    with open(USERS_FILE, "w") as f:
-        json.dump(users, f)
-
-def register_user(username, password):
-    username = username.strip()
-    password = password.strip()
-    if not username or not password:
-        return False, "Username and password cannot be empty"
-    users = load_users()
-    if username in users:
-        return False, "Username already exists. Please login."
-    users[username] = hash_password(password)
-    save_users(users)
-    return True, "Registration successful! Please login."
-
-def verify_user(username, password):
-    username = username.strip()
-    password = password.strip()
-    users = load_users()
-    return username in users and users[username] == hash_password(password)
-
-def change_password(username, new_password):
-    username = username.strip()
-    new_password = new_password.strip()
-    users = load_users()
-    users[username] = hash_password(new_password)
-    save_users(users)
-
-def change_username(old_username, new_username):
-    old_username = old_username.strip()
-    new_username = new_username.strip()
-    users = load_users()
-    if not new_username:
-        return False, "Username cannot be empty."
-    if new_username in users:
-        return False, "Username already taken."
-    users[new_username] = users.pop(old_username)
-    save_users(users)
-    st.session_state.username = new_username
-    return True, "Username updated successfully."
 
 # -------------------------
 # SIDEBAR NAVIGATION (FIXED)
