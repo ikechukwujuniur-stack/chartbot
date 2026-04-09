@@ -206,24 +206,4 @@ elif st.session_state.page == "Settings":
     st.session_state.bg_color = st.color_picker("Background Color", st.session_state.bg_color)
     st.session_state.text_color = st.color_picker("Text Color", st.session_state.text_color)
 
-    st.divider()
-    st.subheader("🔐 Account Settings")
-
-    new_username = st.text_input("Change Username", key="new_username")
-    if st.button("Update Username"):
-        if new_username.strip():
-            success, msg = change_username(st.session_state.username, new_username.strip())
-            if success:
-                st.success(msg)
-            else:
-                st.error(msg)
-        else:
-            st.error("Username cannot be empty.")
-
-    new_pass = st.text_input("Change Password", type="password")
-    if st.button("Update Password"):
-        if new_pass:
-            change_password(st.session_state.username, new_pass)
-            st.success("Password updated successfully")
-        else:
-            st.error("Password cannot be empty")
+    
