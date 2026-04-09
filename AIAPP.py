@@ -7,23 +7,18 @@ import requests
 # -------------------------
 # CONFIG
 # -------------------------
-USERS_FILE = "users.json"
-CURRENT_USER_FILE = "current_user.json"
 API_URL = "https://api.dictionaryapi.dev/api/v2/entries/en/{}"
 
 st.set_page_config(page_title="📖 Smart Dictionary AI", layout="centered")
 
 # -------------------------
-# SESSION STATE
+# SESSION STATE (FIXED)
 # -------------------------
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = True   # ✅ ALWAYS TRUE NOW
-if "username" not in st.session_state:
-    st.session_state.username = "Guest"     # ✅ DEFAULT USER
 if "page" not in st.session_state:
-    st.session_state.page = "Dictionary"    # ✅ START DIRECTLY
+    st.session_state.page = "Dictionary"
 
-st.session_state.setdefault("nav_page", st.session_state.page)
+if "username" not in st.session_state:
+    st.session_state.username = "Guest"
 
 # UI defaults
 defaults = {
@@ -34,34 +29,26 @@ defaults = {
     "text_color": "#000000",
 }
 for k, v in defaults.items():
-    st.session_state.setdefault(k, v)
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 # -------------------------
-# HELPERS (UNCHANGED)
-# -------------------------
-
-    
-
-
-# -------------------------
-# SIDEBAR NAVIGATION (FIXED)
+# SIDEBAR (FIXED)
 # -------------------------
 st.sidebar.header("📌 Navigation")
 
 nav_choice = st.sidebar.selectbox(
     "Go to page:",
-    ["Dictionary", "Settings"],   # ✅ REMOVED LOGIN & REGISTER
-    index=["Dictionary", "Settings"].index(st.session_state.page),
-    key="nav_page"
+    ["Dictionary", "Settings"],
+    index=0 if st.session_state.page == "Dictionary" else 1
 )
 
-if nav_choice != st.session_state.page:
-    st.session_state.page = nav_choice
+st.session_state.page = nav_choice
 
-st.sidebar.success(f"User: {st.session_state.username}")  # ✅ SIMPLE USER DISPLAY
+st.sidebar.success(f"User: {st.session_state.username}")
 
 # -------------------------
-# GLOBAL STYLES (UNCHANGED)
+# GLOBAL STYLE
 # -------------------------
 st.markdown(
     f"""
@@ -81,29 +68,26 @@ st.markdown(
         border-radius: 8px;
         padding: 0.5em 1em;
     }}
-    div.stButton > button:hover {{
-        opacity: 0.85;
-    }}
     </style>
     """,
     unsafe_allow_html=True
 )
 
 # -------------------------
-# DICTIONARY PAGE (AUTH CHECK REMOVED)
+# DICTIONARY PAGE (FIXED)
 # -------------------------
 if st.session_state.page == "Dictionary":
 
     st.title("📖 Smart Dictionary AI")
 
-    show_phonetics = st.sidebar.checkbox("Show Phonetics", True, key="show_phonetics")
-    play_audio = st.sidebar.checkbox("Play Pronunciation Audio", True, key="play_audio")
-    show_synonyms = st.sidebar.checkbox("Show Synonyms", True, key="show_synonyms")
-    show_antonyms = st.sidebar.checkbox("Show Antonyms", True, key="show_antonyms")
-    show_examples = st.sidebar.checkbox("Show Examples", True, key="show_examples")
+    show_phonetics = st.sidebar.checkbox("Show Phonetics", True)
+    play_audio = st.sidebar.checkbox("Play Pronunciation Audio", True)
+    show_synonyms = st.sidebar.checkbox("Show Synonyms", True)
+    show_antonyms = st.sidebar.checkbox("Show Antonyms", True)
+    show_examples = st.sidebar.checkbox("Show Examples", True)
 
-    output_style = st.sidebar.radio("Display Style", ("Detailed", "Minimal"), key="output_style")
-    layout_option = st.sidebar.radio("Layout", ("Single Column", "Two Columns"), key="layout_option")
+    output_style = st.sidebar.radio("Display Style", ("Detailed", "Minimal"))
+    layout_option = st.sidebar.radio("Layout", ("Single Column", "Two Columns"))
 
     word = st.text_input("Enter a word").strip().lower()
 
@@ -118,43 +102,52 @@ if st.session_state.page == "Dictionary":
                 entry = data[0]
                 st.subheader(entry["word"].capitalize())
 
-                col1, col2 = st.columns(2) if layout_option == "Two Columns" else (st, st)
+                if layout_option == "Two Columns":
+                    col1, col2 = st.columns(2)
+                else:
+                    col1, col2 = st, st
 
                 for meaning in entry.get("meanings", []):
                     pos = meaning.get("partOfSpeech", "")
                     for d in meaning.get("definitions", []):
+
                         if output_style == "Detailed":
                             col1.markdown(f"**({pos})** {d['definition']}")
                         else:
                             col1.write(f"- {d['definition']}")
 
-                        if show_examples and "example" in d:
+                        if show_examples and d.get("example"):
                             col2.caption("Example: " + d["example"])
+
                         if show_synonyms and d.get("synonyms"):
                             col2.write("🟢 Synonyms: " + ", ".join(d["synonyms"][:10]))
+
                         if show_antonyms and d.get("antonyms"):
                             col2.write("🔴 Antonyms: " + ", ".join(d["antonyms"][:10]))
-                        if show_phonetics and "phonetics" in entry:
-                            for ph in entry["phonetics"]:
-                                if "text" in ph:
-                                    col2.markdown(f"Phonetic: {ph['text']}")
-                                if play_audio and "audio" in ph and ph["audio"]:
-                                    col2.audio(ph["audio"], format="audio/mp3")
+
+                if show_phonetics and entry.get("phonetics"):
+                    for ph in entry["phonetics"]:
+                        if ph.get("text"):
+                            st.markdown(f"Phonetic: {ph['text']}")
+                        if play_audio and ph.get("audio"):
+                            st.audio(ph["audio"])
+
         except Exception as e:
             st.error(f"Error fetching data: {e}")
 
 # -------------------------
-# SETTINGS PAGE (AUTH CHECK REMOVED)
+# SETTINGS PAGE (FIXED)
 # -------------------------
 elif st.session_state.page == "Settings":
 
     st.title("⚙️ Settings")
 
     st.subheader("🎨 Display Settings")
+
     st.session_state.brightness = st.slider("Brightness", 0.5, 1.0, st.session_state.brightness)
     st.session_state.font_size = st.slider("Font Size", 12, 24, st.session_state.font_size)
     st.session_state.accent_color = st.color_picker("Accent Color", st.session_state.accent_color)
     st.session_state.bg_color = st.color_picker("Background Color", st.session_state.bg_color)
     st.session_state.text_color = st.color_picker("Text Color", st.session_state.text_color)
 
-    
+    st.success("Settings saved automatically ✅")
