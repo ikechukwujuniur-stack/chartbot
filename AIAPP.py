@@ -1,216 +1,229 @@
 import streamlit as st
-import wikipedia
-import re
-from gtts import gTTS
-import tempfile
+import hashlib
+import json
+import os
+import requests
 
-st.title("📚 Dictionary")
+# -------------------------
+# CONFIG
+# -------------------------
+USERS_FILE = "users.json"
+CURRENT_USER_FILE = "current_user.json"
+API_URL = "https://api.dictionaryapi.dev/api/v2/entries/en/{}"
 
-# ---------------- SETTINGS ----------------
+st.set_page_config(page_title="📖 Smart Dictionary AI", layout="centered")
 
-st.sidebar.title("⚙️ Settings")
+# -------------------------
+# SESSION STATE
+# -------------------------
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = True   # ✅ ALWAYS TRUE NOW
+if "username" not in st.session_state:
+    st.session_state.username = "Guest"     # ✅ DEFAULT USER
+if "page" not in st.session_state:
+    st.session_state.page = "Dictionary"    # ✅ START DIRECTLY
 
-background_color = st.sidebar.color_picker(
-    "Background Color",
-    "#0e1117"
+st.session_state.setdefault("nav_page", st.session_state.page)
+
+# UI defaults
+defaults = {
+    "brightness": 1.0,
+    "font_size": 16,
+    "accent_color": "#1f77b4",
+    "bg_color": "#ffffff",
+    "text_color": "#000000",
+}
+for k, v in defaults.items():
+    st.session_state.setdefault(k, v)
+
+# -------------------------
+# HELPERS (UNCHANGED)
+# -------------------------
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def load_users():
+    if not os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "w") as f:
+            json.dump({}, f)
+        return {}
+    with open(USERS_FILE, "r") as f:
+        return json.load(f)
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f)
+
+def register_user(username, password):
+    username = username.strip()
+    password = password.strip()
+    if not username or not password:
+        return False, "Username and password cannot be empty"
+    users = load_users()
+    if username in users:
+        return False, "Username already exists. Please login."
+    users[username] = hash_password(password)
+    save_users(users)
+    return True, "Registration successful! Please login."
+
+def verify_user(username, password):
+    username = username.strip()
+    password = password.strip()
+    users = load_users()
+    return username in users and users[username] == hash_password(password)
+
+def change_password(username, new_password):
+    username = username.strip()
+    new_password = new_password.strip()
+    users = load_users()
+    users[username] = hash_password(new_password)
+    save_users(users)
+
+def change_username(old_username, new_username):
+    old_username = old_username.strip()
+    new_username = new_username.strip()
+    users = load_users()
+    if not new_username:
+        return False, "Username cannot be empty."
+    if new_username in users:
+        return False, "Username already taken."
+    users[new_username] = users.pop(old_username)
+    save_users(users)
+    st.session_state.username = new_username
+    return True, "Username updated successfully."
+
+# -------------------------
+# SIDEBAR NAVIGATION (FIXED)
+# -------------------------
+st.sidebar.header("📌 Navigation")
+
+nav_choice = st.sidebar.selectbox(
+    "Go to page:",
+    ["Dictionary", "Settings"],   # ✅ REMOVED LOGIN & REGISTER
+    index=["Dictionary", "Settings"].index(st.session_state.page),
+    key="nav_page"
 )
 
-heading_color = st.sidebar.color_picker(
-    "Heading Color",
-    "#ffffff"
-)
+if nav_choice != st.session_state.page:
+    st.session_state.page = nav_choice
 
-text_color = st.sidebar.color_picker(
-    "Text Color",
-    "#ffffff"
-)
+st.sidebar.success(f"User: {st.session_state.username}")  # ✅ SIMPLE USER DISPLAY
 
-voice_on = st.sidebar.checkbox("Enable AI Voice", value=True)
-
-max_pages = st.sidebar.slider(
-    "Pages to Search",
-    1,
-    10,
-    3
-)
-
-# ---------------- STYLE ----------------
-
+# -------------------------
+# GLOBAL STYLES (UNCHANGED)
+# -------------------------
 st.markdown(
     f"""
     <style>
-
-    .stApp {{
-        background-color: {background_color};
-        color: {text_color};
+    html, body, [class*="st"] {{
+        background-color: {st.session_state.bg_color};
+        color: {st.session_state.text_color};
+        font-size: {st.session_state.font_size}px;
+        opacity: {st.session_state.brightness};
     }}
-
-    h1, h2, h3, h4, h5, h6 {{
-        color: {heading_color};
+    h1, h2, h3 {{
+        color: {st.session_state.accent_color};
     }}
-
-    p, span, label, div {{
-        color: {text_color};
+    div.stButton > button {{
+        background-color: {st.session_state.accent_color};
+        color: #ffffff;
+        border-radius: 8px;
+        padding: 0.5em 1em;
     }}
-
+    div.stButton > button:hover {{
+        opacity: 0.85;
+    }}
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# ---------------- ANIMATED CIRCLES ----------------
+# -------------------------
+# DICTIONARY PAGE (AUTH CHECK REMOVED)
+# -------------------------
+if st.session_state.page == "Dictionary":
 
-st.markdown("""
-<style>
+    st.title("📖 Smart Dictionary AI")
 
-.circle{
-position:fixed;
-border-radius:50%;
-opacity:0.15;
-animation:float 8s infinite ease-in-out;
-}
+    show_phonetics = st.sidebar.checkbox("Show Phonetics", True, key="show_phonetics")
+    play_audio = st.sidebar.checkbox("Play Pronunciation Audio", True, key="play_audio")
+    show_synonyms = st.sidebar.checkbox("Show Synonyms", True, key="show_synonyms")
+    show_antonyms = st.sidebar.checkbox("Show Antonyms", True, key="show_antonyms")
+    show_examples = st.sidebar.checkbox("Show Examples", True, key="show_examples")
 
-.circle1{
-width:200px;
-height:200px;
-background:#00ffff;
-top:20%;
-left:10%;
-}
+    output_style = st.sidebar.radio("Display Style", ("Detailed", "Minimal"), key="output_style")
+    layout_option = st.sidebar.radio("Layout", ("Single Column", "Two Columns"), key="layout_option")
 
-.circle2{
-width:150px;
-height:150px;
-background:#ff00ff;
-top:60%;
-left:70%;
-}
+    word = st.text_input("Enter a word").strip().lower()
 
-.circle3{
-width:120px;
-height:120px;
-background:#ffff00;
-top:40%;
-left:40%;
-}
+    if word:
+        try:
+            response = requests.get(API_URL.format(word))
+            data = response.json()
 
-@keyframes float{
-0%{transform:translateY(0);}
-50%{transform:translateY(-40px);}
-100%{transform:translateY(0);}
-}
+            if isinstance(data, dict):
+                st.error("No definitions found.")
+            else:
+                entry = data[0]
+                st.subheader(entry["word"].capitalize())
 
-</style>
+                col1, col2 = st.columns(2) if layout_option == "Two Columns" else (st, st)
 
-<div class="circle circle1"></div>
-<div class="circle circle2"></div>
-<div class="circle circle3"></div>
+                for meaning in entry.get("meanings", []):
+                    pos = meaning.get("partOfSpeech", "")
+                    for d in meaning.get("definitions", []):
+                        if output_style == "Detailed":
+                            col1.markdown(f"**({pos})** {d['definition']}")
+                        else:
+                            col1.write(f"- {d['definition']}")
 
-""", unsafe_allow_html=True)
+                        if show_examples and "example" in d:
+                            col2.caption("Example: " + d["example"])
+                        if show_synonyms and d.get("synonyms"):
+                            col2.write("🟢 Synonyms: " + ", ".join(d["synonyms"][:10]))
+                        if show_antonyms and d.get("antonyms"):
+                            col2.write("🔴 Antonyms: " + ", ".join(d["antonyms"][:10]))
+                        if show_phonetics and "phonetics" in entry:
+                            for ph in entry["phonetics"]:
+                                if "text" in ph:
+                                    col2.markdown(f"Phonetic: {ph['text']}")
+                                if play_audio and "audio" in ph and ph["audio"]:
+                                    col2.audio(ph["audio"], format="audio/mp3")
+        except Exception as e:
+            st.error(f"Error fetching data: {e}")
 
-# ---------------- WIKIPEDIA SEARCH ----------------
+# -------------------------
+# SETTINGS PAGE (AUTH CHECK REMOVED)
+# -------------------------
+elif st.session_state.page == "Settings":
 
-def wiki_search(query, max_pages=3):
+    st.title("⚙️ Settings")
 
-    pages = []
+    st.subheader("🎨 Display Settings")
+    st.session_state.brightness = st.slider("Brightness", 0.5, 1.0, st.session_state.brightness)
+    st.session_state.font_size = st.slider("Font Size", 12, 24, st.session_state.font_size)
+    st.session_state.accent_color = st.color_picker("Accent Color", st.session_state.accent_color)
+    st.session_state.bg_color = st.color_picker("Background Color", st.session_state.bg_color)
+    st.session_state.text_color = st.color_picker("Text Color", st.session_state.text_color)
 
-    try:
-        summary = wikipedia.summary(query, sentences=10, auto_suggest=False)
-        pages.append(summary)
+    st.divider()
+    st.subheader("🔐 Account Settings")
 
-    except wikipedia.DisambiguationError as e:
-
-        for option in e.options:
-
-            bad_words = ["song","album","film","movie","band"]
-
-            if not any(b in option.lower() for b in bad_words):
-
-                try:
-                    summary = wikipedia.summary(option, sentences=10)
-                    pages.append(summary)
-                    return pages
-                except:
-                    continue
-
-        summary = wikipedia.summary(e.options[0], sentences=10)
-        pages.append(summary)
-
-    except wikipedia.PageError:
-
-        results = wikipedia.search(query, results=max_pages)
-
-        for title in results:
-
-            if any(x in title.lower() for x in ["song","album","film","movie"]):
-                continue
-
-            try:
-                summary = wikipedia.summary(title, sentences=6)
-                pages.append(summary)
-                break
-            except:
-                continue
-
-    return pages
-
-# ---------------- ANSWER GENERATION ----------------
-
-def generate_answer_locally(query, pages):
-
-    combined_text = " ".join(pages)
-
-    sentences = re.split(r'(?<=[.!?]) +', combined_text)
-
-    stop_words = {
-        "what","is","are","the","a","an","who","why",
-        "when","where","how","does","do","did","of"
-    }
-
-    keywords = [word.lower() for word in query.split() if word.lower() not in stop_words]
-
-    picks = [
-        s for s in sentences
-        if any(keyword in s.lower() for keyword in keywords)
-    ]
-
-    if not picks:
-        return " ".join(sentences[:3])
-
-    return " ".join(picks[:3])
-
-# ---------------- USER INPUT ----------------
-
-q = st.text_input("Ask a question:")
-
-# ---------------- AI BUTTON ----------------
-
-if st.button("Search and Answer") and q:
-
-    with st.spinner("Searching Wikipedia and generating answer..."):
-
-        pages = wiki_search(q, max_pages=max_pages)
-
-        if not pages:
-
-            st.error("Sorry, no relevant pages found. Try rephrasing your question.")
-
+    new_username = st.text_input("Change Username", key="new_username")
+    if st.button("Update Username"):
+        if new_username.strip():
+            success, msg = change_username(st.session_state.username, new_username.strip())
+            if success:
+                st.success(msg)
+            else:
+                st.error(msg)
         else:
+            st.error("Username cannot be empty.")
 
-            answer = generate_answer_locally(q, pages)
-
-            st.subheader("Answer")
-
-            st.write(answer)
-
-            # ---------------- AI VOICE ----------------
-
-            if voice_on:
-
-                tts = gTTS(answer)
-
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-
-                tts.save(temp_file.name)
-
-                st.audio(temp_file.name)
+    new_pass = st.text_input("Change Password", type="password")
+    if st.button("Update Password"):
+        if new_pass:
+            change_password(st.session_state.username, new_pass)
+            st.success("Password updated successfully")
+        else:
+            st.error("Password cannot be empty")
